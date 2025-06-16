@@ -48,7 +48,7 @@ def criar_mapa_destaque(municipio):
     destaque_coords = None
 
     for _, row in df_map.iterrows():
-        cor = "red" if row["Municipio"] == municipio else "blue"
+        cor = "green" if row["Municipio"] == municipio else "gray"
         popup = f"<b>{row['Razão Social']}</b><br>Produto: {row.get('Produto', 'N/A')}<br>Tanque: {row.get('Nome Tanque', 'Desconhecido')}<br>Tancagem: {row.get('Tancagem (m³)', 0)} m³"
         folium.CircleMarker(
             location=[row["LATITUDE"], row["LONGITUDE"]],
@@ -121,7 +121,7 @@ app.layout = html.Div(style={"backgroundColor": "#e0f2e9", "padding": "20px"}, c
         ], color="success", inverse=True), width=6),
     ], className="mb-4"),
 
-    html.H4("Selecione o Município para Zoom e Detalhes", style={"marginTop": "20px"}),
+    html.H4("Selecione o Município para Detalhes", style={"marginTop": "20px"}),
     dcc.Dropdown(id="municipio-dropdown", options=[
         {"label": mun, "value": mun} for mun in sorted(df["Municipio"].unique())
     ], placeholder="Escolha um município", style={"marginBottom": "20px"}),
@@ -131,7 +131,7 @@ app.layout = html.Div(style={"backgroundColor": "#e0f2e9", "padding": "20px"}, c
     html.H4("Mapa de Postos com Destaque", style={"marginTop": "20px"}),
     html.Iframe(id="mapa-destaque", width="100%", height="500", srcDoc="Carregando mapa..."),
 
-    html.H4("Mapa de Cluster de Postos (fixo)", style={"marginTop": "40px"}),
+    html.H4("Mapa de Cluster de Tanques", style={"marginTop": "40px"}),
     html.Iframe(id="mapa-cluster", width="100%", height="500", srcDoc=open(mapa_cluster_path, "r", encoding="utf-8").read()),
 
     html.H4("Gráficos Gerais", style={"marginTop": "40px"}),
