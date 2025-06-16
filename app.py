@@ -112,14 +112,14 @@ app.layout = html.Div(style={"backgroundColor": "#e0f2e9", "padding": "20px"}, c
         dbc.Col(dbc.Card([
             dbc.CardBody([
                 html.H4("Total de Postos", className="card-title"),
-                html.H2(f"{total_postos_unicos}", style={"color": "#2e7d32"})
+                html.H2(f"{total_postos_unicos}", style={"color": "#f7fafa"})
             ])
         ], color="success", inverse=True), width=6),
 
         dbc.Col(dbc.Card([
             dbc.CardBody([
                 html.H4("Tancagem Total (m³)", className="card-title"),
-                html.H2(f"{int(tancagem_total_geral):,}".replace(",", "."), style={"color": "#2e7d32"})
+                html.H2(f"{int(tancagem_total_geral):,}".replace(",", "."), style={"color": "#f7fafa"})
             ])
         ], color="success", inverse=True), width=6),
     ], className="mb-4"),
