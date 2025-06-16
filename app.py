@@ -10,19 +10,20 @@ os.makedirs("assets", exist_ok=True)
 
 def dms_to_decimal(dms):
     try:
-        if pd.isna(dms):
+        if pd.isna(dms) or not isinstance(dms, str):
             return None
-        dms = dms.replace(",", ".")
+        dms = dms.strip().replace(",", ".").replace("\xa0", "").replace("\r", "").replace("\n", "")
         parts = dms.split(":")
         if len(parts) == 3:
-            raw_degrees = parts[0]
-            degrees = abs(float(raw_degrees))
-            minutes = float(parts[1]) / 60
-            seconds = float(parts[2]) / 3600
-            decimal = degrees + minutes + seconds
-            return -decimal if "-" in raw_degrees else decimal
+            raw_deg = parts[0].strip()
+            deg = abs(float(raw_deg))
+            min = float(parts[1].strip()) / 60
+            sec = float(parts[2].strip()) / 3600
+            dec = deg + min + sec
+            return -dec if "-" in raw_deg else dec
         return None
-    except:
+    except Exception as e:
+        print(f"Erro ao converter '{dms}': {e}")
         return None
 
 
