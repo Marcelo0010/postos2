@@ -126,8 +126,9 @@ app.layout = html.Div(style={"backgroundColor": "#e0f2e9", "padding": "20px"}, c
 
     html.H4("Selecione o Município para Detalhes", style={"marginTop": "20px"}),
     dcc.Dropdown(id="municipio-dropdown", options=[
-        {"label": mun, "value": mun} for mun in sorted(df["Municipio"].unique())
-    ], placeholder="Escolha um município", style={"marginBottom": "20px"}),
+    {"label": mun, "value": mun} for mun in sorted(df["Municipio"].dropna().astype(str).unique())
+], placeholder="Escolha um município", style={"marginBottom": "20px"}),
+
 
     html.Div(id="info-municipio", style={"minHeight": "160px"}),
 
