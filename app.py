@@ -15,14 +15,16 @@ def dms_to_decimal(dms):
         dms = dms.replace(",", ".")
         parts = dms.split(":")
         if len(parts) == 3:
-            degrees = float(parts[0])
+            raw_degrees = parts[0]
+            degrees = abs(float(raw_degrees))
             minutes = float(parts[1]) / 60
             seconds = float(parts[2]) / 3600
-            decimal = abs(degrees) + minutes + seconds
-            return -decimal if degrees < 0 else decimal
+            decimal = degrees + minutes + seconds
+            return -decimal if "-" in raw_degrees else decimal
         return None
     except:
         return None
+
 
 # Dados
 df = pd.read_excel("base1.xlsx", sheet_name="Folha1")
