@@ -1,183 +1,185 @@
+import os
+import streamlit as st
 import pandas as pd
 import folium
-from dash import Dash, html, dcc, Input, Output
-import plotly.express as px
-import dash_bootstrap_components as dbc
 from folium.plugins import MarkerCluster
-import os
+import plotly.express as px
+from streamlit.components.v1 import html
+from shapely.geometry import Point
+import geopandas as gpd
 
-os.makedirs("assets", exist_ok=True)
+# --- Configuração geral do Streamlit (deve ser a primeira chamada) ---
+st.set_page_config(
+    page_title="Painel de Tancagem e Localização de Postos e Usinas na Paraíba",
+    layout="wide"
+)
 
+# --- Custom CSS para fundo verde ---
+st.markdown(
+    """
+    <style>
+      .reportview-container, .main, header, footer {
+        background-color: #e0f2e9;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# --- Função de conversão DMS para Decimal ---
 def dms_to_decimal(dms):
     try:
         if pd.isna(dms) or not isinstance(dms, str):
             return None
-        dms = dms.strip().replace(",", ".").replace("\xa0", "").replace("\r", "").replace("\n", "")
-        parts = dms.split(":")
-        if len(parts) == 3:
-            raw_deg = parts[0].strip()
-            deg = abs(float(raw_deg))
-            min = float(parts[1].strip()) / 60
-            sec = float(parts[2].strip()) / 3600
-            dec = deg + min + sec
-            return -dec if "-" in raw_deg else dec
-        return None
-    except Exception as e:
-        print(f"Erro ao converter '{dms}': {e}")
+        txt = dms.strip().replace(",", ".").replace("\xa0", "").replace("\r", "").replace("\n", "")
+        deg, minu, sec = [float(p) for p in txt.split(":")]
+        return - (abs(deg) + minu/60 + sec/3600) if "-" in txt else abs(deg) + minu/60 + sec/3600
+    except:
         return None
 
-
-# Dados
+# --- Carrega e prepara os dados de postos ---
 df = pd.read_excel("base1.xlsx", sheet_name="Folha1")
-df["LATITUDE"] = df["LATITUDE"].apply(dms_to_decimal)
+df["LATITUDE"]  = df["LATITUDE"].apply(dms_to_decimal)
 df["LONGITUDE"] = df["LONGITUDE"].apply(dms_to_decimal)
 df.rename(columns={"MUNICÍPIO": "Municipio"}, inplace=True)
-
-postos_unicos = df.drop_duplicates(subset=["CNPJ"])
-total_postos_unicos = len(postos_unicos)
-tancagem_total_geral = df["Tancagem (m³)"].sum()
-tancagem_por_produto = df.groupby("Produto")["Tancagem (m³)"].sum().reset_index()
-tancagem_por_mun_prod = df.groupby(["Municipio", "Produto"])["Tancagem (m³)"].sum().reset_index()
-
 df_map = df.dropna(subset=["LATITUDE", "LONGITUDE"])
 
-graf_tancagem_produto = px.bar(tancagem_por_produto, x="Produto", y="Tancagem (m³)", title="Tancagem por Produto", height=400)
-graf_tancagem_mun = px.bar(tancagem_por_mun_prod, x="Municipio", y="Tancagem (m³)", color="Produto",
-                             title="Tancagem por Produto e Município", height=600)
+# --- Define usinas ---
+usinas = pd.DataFrame({
+    "Nome": [
+        "USINA GIASA", "Miriri Alimentos e Bioenergia S/A", "Japungu Agroindustrial LTDA",
+        "Agro Industrial Tabu", "D'PADUA Destilação Produção Agroindústria e Comércio SA",
+        "Usina Monte Alegre", "Usina Japungu Filial - Agroval"
+    ],
+    "Latitude": [-7.352506, -6.945139, -6.991104, -7.509135, -6.611784, -6.858823, -7.09078095333581],
+    "Longitude": [-35.025719, -35.132694, -35.023097, -34.876716, -35.057232, -35.129743, -34.98264570629842]
+})
 
-# --- Função para salvar mapa simples (sem cluster) com destaque no município ---
-def criar_mapa_destaque(municipio):
-    m = folium.Map(location=[df_map["LATITUDE"].mean(), df_map["LONGITUDE"].mean()], zoom_start=7)
-    destaque_coords = None
+# --- Métricas gerais ---
+pos_tot = df.drop_duplicates("CNPJ").shape[0]
+tanc_tot = int(df["Tancagem (m³)"].sum())
+usa_tot = usinas.shape[0]
 
-    for _, row in df_map.iterrows():
-        cor = "green" if row["Municipio"] == municipio else "gray"
-        popup = f"<b>{row['Razão Social']}</b><br>Produto: {row.get('Produto', 'N/A')}<br>Tanque: {row.get('Nome Tanque', 'Desconhecido')}<br>Tancagem: {row.get('Tancagem (m³)', 0)} m³"
+# --- Agregações para gráficos e tabelas ---
+tanc_prod = df.groupby("Produto")["Tancagem (m³)"].sum().reset_index()
+tanc_mun_prod = df.groupby(["Municipio", "Produto"])["Tancagem (m³)"].sum().reset_index()
+tanc_med_post = (
+    df.groupby("Municipio")["Tancagem (m³)"].sum() /
+    df.groupby("Municipio")["CNPJ"].nunique()
+).reset_index()
+tanc_med_post.columns = ["Município", "Média Tancagem/Posto"]
+
+# --- Funções para criação de mapas Folium ---
+def criar_mapa_cluster(center=None, zoom=7):
+    center = center or [df_map.LATITUDE.mean(), df_map.LONGITUDE.mean()]
+    m = folium.Map(location=center, zoom_start=zoom)
+    mc = MarkerCluster().add_to(m)
+    for _, r in df_map.iterrows():
         folium.CircleMarker(
-            location=[row["LATITUDE"], row["LONGITUDE"]],
-            radius=max(5, row["Tancagem (m³)"] / 500),
-            popup=folium.Popup(popup, max_width=300),
-            color=cor,
-            fill=True,
-            fill_color=cor,
-            fill_opacity=0.8,
+            [r.LATITUDE, r.LONGITUDE], radius=max(5, r["Tancagem (m³)"] / 500),
+            color="blue", fill=True, fill_color="blue", fill_opacity=0.6,
+            popup=f"<b>{r['Razão Social']}</b><br>Produto: {r['Produto']}<br>Tancagem: {r['Tancagem (m³)']} m³"
+        ).add_to(mc)
+    for _, u in usinas.iterrows():
+        folium.Marker(
+            [u.Latitude, u.Longitude],
+            icon=folium.Icon(color="red", icon="industry", prefix="fa"),
+            popup=f"<b>Usina:</b> {u.Nome}"
         ).add_to(m)
-        if row["Municipio"] == municipio:
-            destaque_coords = [row["LATITUDE"], row["LONGITUDE"]]
+    return m
 
-    if destaque_coords:
-        m.location = destaque_coords
-        m.zoom_start = 12
 
-    caminho = "assets/mapa_destaque.html"
-    m.save(caminho)
-    return caminho
-
-# --- Função para salvar mapa com cluster (fixo) ---
-def criar_mapa_cluster():
-    m = folium.Map(location=[df_map["LATITUDE"].mean(), df_map["LONGITUDE"].mean()], zoom_start=7)
-    cluster = MarkerCluster().add_to(m)
-
-    for _, row in df_map.iterrows():
-        popup = f"<b>{row['Razão Social']}</b><br>Produto: {row.get('Produto', 'N/A')}<br>Tanque: {row.get('Nome Tanque', 'Desconhecido')}<br>Tancagem: {row.get('Tancagem (m³)', 0)} m³"
+def criar_mapa_destaque(mun=None):
+    center = [df_map.LATITUDE.mean(), df_map.LONGITUDE.mean()]
+    zoom = 7
+    m = folium.Map(location=center, zoom_start=zoom)
+    for _, r in df_map.iterrows():
+        clr = "green" if r.Municipio == mun else "gray"
         folium.CircleMarker(
-            location=[row["LATITUDE"], row["LONGITUDE"]],
-            radius=max(5, row["Tancagem (m³)"] / 500),
-            popup=folium.Popup(popup, max_width=300),
-            color="blue",
-            fill=True,
-            fill_color="blue",
-            fill_opacity=0.6,
-        ).add_to(cluster)
+            [r.LATITUDE, r.LONGITUDE], radius=max(5, r["Tancagem (m³)"] / 500),
+            color=clr, fill=True, fill_color=clr, fill_opacity=0.8,
+            popup=f"<b>{r['Razão Social']}</b><br>Produto: {r['Produto']}<br>Tancagem: {r['Tancagem (m³)']} m³"
+        ).add_to(m)
+        if r.Municipio == mun:
+            center, zoom = [r.LATITUDE, r.LONGITUDE], 12
+    for _, u in usinas.iterrows():
+        folium.Marker(
+            [u.Latitude, u.Longitude],
+            icon=folium.Icon(color="red", icon="industry", prefix="fa"),
+            popup=f"<b>Usina:</b> {u.Nome}"
+        ).add_to(m)
+    m.location, m.zoom_start = center, zoom
+    return m
 
-    caminho = "assets/mapa_cluster.html"
-    m.save(caminho)
-    return caminho
+# --- Cabeçalho ---
+with st.container():
+    st.markdown(
+        """
+        <div style="background-color:#004d40;padding:20px;border-radius:8px">
+          <h1 style="text-align:center;color:#ffffff;font-size:36px;margin:0">
+            Painel de Tancagem e Localização de Postos e Usinas na Paraíba
+          </h1>
+        </div>
+        """, unsafe_allow_html=True
+    )
+    st.markdown(
+        """
+        <p style="text-align:center;font-size:18px;margin-top:10px;">
+        O Sindalcool disponibiliza o mapeamento interativo que mostra a distribuição dos tanques
+        de combustível e postos do estado da Paraíba, incluindo estatísticas por produto e por município,
+        bem como a localização exata dos estabelecimentos.
+        </p>
+        """, unsafe_allow_html=True
+    )
 
-# Salvar mapa cluster uma vez, fora do callback
-mapa_cluster_path = criar_mapa_cluster()
+# --- KPIs Principais ---
+c1, c2, c3 = st.columns(3)
+c1.metric("Postos Únicos", pos_tot)
+c2.metric("Tancagem Total (m³)", f"{tanc_tot:,}".replace(",", "."))
+c3.metric("Usinas Mapeadas", usa_tot)
 
-app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-server = app.server
-app.title = "Painel de Tancagem - Paraíba"
-
-app.layout = html.Div(style={"backgroundColor": "#e0f2e9", "padding": "20px"}, children=[
-    html.H1("Painel de Tancagem e Localização de Postos na Paraíba", 
-            style={"textAlign": "center", "color": "#004d40", "fontWeight": "bold", "fontSize": "36px"}),
-
-    html.P("O Sindalcool disponibiliza o mapeamento interativo que mostra a distribuição dos tanques de combustível e postos do estado da Paraíba, incluindo estatísticas por produto e por município, bem como a localização exata dos estabelecimentos.",
-           style={"textAlign": "center", "fontSize": "18px"}),
-
-    dbc.Row([
-        dbc.Col(dbc.Card([
-            dbc.CardBody([
-                html.H4("Total de Postos", className="card-title"),
-                html.H2(f"{total_postos_unicos}", style={"color": "#f7fafa"})
-            ])
-        ], color="success", inverse=True), width=6),
-
-        dbc.Col(dbc.Card([
-            dbc.CardBody([
-                html.H4("Tancagem Total (m³)", className="card-title"),
-                html.H2(f"{int(tancagem_total_geral):,}".replace(",", "."), style={"color": "#f7fafa"})
-            ])
-        ], color="success", inverse=True), width=6),
-    ], className="mb-4"),
-
-    html.H4("Selecione o Município para Detalhes", style={"marginTop": "20px"}),
-    dcc.Dropdown(id="municipio-dropdown", options=[
-    {"label": mun, "value": mun} for mun in sorted(df["Municipio"].dropna().astype(str).unique())
-], placeholder="Escolha um município", style={"marginBottom": "20px"}),
-
-
-    html.Div(id="info-municipio", style={"minHeight": "160px"}),
-
-    html.H4("Mapa de Postos com Destaque", style={"marginTop": "20px"}),
-    html.Iframe(id="mapa-destaque", width="100%", height="500", srcDoc="Carregando mapa..."),
-
-    html.H4("Mapa de Cluster de Tanques", style={"marginTop": "40px"}),
-    html.Iframe(id="mapa-cluster", width="100%", height="500", srcDoc=open(mapa_cluster_path, "r", encoding="utf-8").read()),
-
-    html.H4("Gráficos Gerais", style={"marginTop": "40px"}),
-    dbc.Row([
-        dbc.Col(dcc.Graph(figure=graf_tancagem_produto), width=12),
-        dbc.Col(dcc.Graph(figure=graf_tancagem_mun), width=12),
-    ])
-])
-
-@app.callback(
-    Output("mapa-destaque", "srcDoc"),
-    Output("info-municipio", "children"),
-    Input("municipio-dropdown", "value")
+# --- Seleção de Município ---
+mun = st.selectbox(
+    "🔎 Selecione o Município para Detalhes",
+    [""] + sorted(df.Municipio.dropna().unique().tolist())
 )
-def atualizar_mapa(municipio):
-    if municipio is None:
-        # Mapa padrão sem zoom ou destaque
-        caminho = criar_mapa_destaque(None)
-        return open(caminho, "r", encoding="utf-8").read(), ""
 
-    # Mapa com destaque no município
-    caminho = criar_mapa_destaque(municipio)
+# --- Exibição de Mapas ---
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("📍 Mapa Cluster de Tanques")
+    html(criar_mapa_cluster()._repr_html_(), height=500)
+with col2:
+    st.subheader("🎯 Mapa com Destaque")
+    html(criar_mapa_destaque(mun if mun else None)._repr_html_(), height=500)
 
-    total_postos = df[df["Municipio"] == municipio]["CNPJ"].nunique()
-    tanc_total = df[df["Municipio"] == municipio]["Tancagem (m³)"].sum()
-    tanc_produto = df[df["Municipio"] == municipio].groupby("Produto")["Tancagem (m³)"].sum().reset_index()
+# --- Detalhamento por Município ---
+if mun:
+    st.markdown(f"### Detalhes para: **{mun}**")
+    dmun = df[df.Municipio == mun]
+    postos_mun = dmun.CNPJ.nunique()
+    tanc_mun = int(dmun["Tancagem (m³)"].sum())
+    st.write(f"- Total de Postos: **{postos_mun}**")
+    st.write(f"- Tancagem Total: **{tanc_mun:,} m³**".replace(",", "."))
+    fig = px.bar(
+        dmun.groupby("Produto")["Tancagem (m³)"].sum().reset_index(),
+        x="Produto", y="Tancagem (m³)", labels={"Tancagem (m³)":"m³"}, title="Tancagem por Produto"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-    fig_prod_mun = px.bar(tanc_produto, x="Produto", y="Tancagem (m³)",
-                         title=f"Tancagem por Produto no Município de {municipio}",
-                         height=300)
+# --- Ranking de Média de Tancagem por Posto ---
+st.subheader("🔢 Ranking: Média de Tancagem por Posto (por Município)")
+st.dataframe(
+    tanc_med_post.sort_values("Média Tancagem/Posto", ascending=False).reset_index(drop=True),
+    use_container_width=True
+)
 
-    info = dbc.Card([
-        dbc.CardBody([
-            html.H4(f"Município: {municipio}"),
-            html.P(f"Total de Postos: {total_postos}"),
-            html.P(f"Tancagem Total: {int(tanc_total):,}".replace(",", ".")),
-            html.Ul([html.Li(f"{row['Produto']}: {int(row['Tancagem (m³)']):,}".replace(",", ".")) for _, row in tanc_produto.iterrows()]),
-            dcc.Graph(figure=fig_prod_mun)
-        ])
-    ])
-
-    return open(caminho, "r", encoding="utf-8").read(), info
+# --- Gráficos Gerais ---
+st.subheader("📊 Gráficos Gerais")
+fig1 = px.bar(tanc_prod, x="Produto", y="Tancagem (m³)", labels={"Tancagem (m³)":"m³"}, title="Tancagem por Produto")
+fig2 = px.bar(tanc_mun_prod, x="Municipio", y="Tancagem (m³)", color="Produto", labels={"Tancagem (m³)":"m³"}, title="Tancagem por Município e Produto")
+st.plotly_chart(fig1, use_container_width=True)
+st.plotly_chart(fig2, use_container_width=True)
 
 if __name__ == "__main__":
     app.run_server(debug=True, host="0.0.0.0")
