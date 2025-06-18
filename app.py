@@ -181,6 +181,5 @@ fig2 = px.bar(tanc_mun_prod, x="Municipio", y="Tancagem (m³)", color="Produto",
 st.plotly_chart(fig1, use_container_width=True)
 st.plotly_chart(fig2, use_container_width=True)
 
-if __name__ == "__main__":
-    app.run_server(debug=True, host="0.0.0.0")
+
 
