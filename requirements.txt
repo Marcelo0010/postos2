@@ -2,13 +2,10 @@ pandas
 numpy
 dash
 streamlit
-openpyxl
 folium
-plotly
 dash-bootstrap-components
 plotly
 openpyxl
-folium
 geopandas
 shapely
 gunicorn
